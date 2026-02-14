@@ -1,0 +1,6 @@
+repo_url,local_path,status,visibility,k3s_deployed,description,tags,last_synced,managed
+git@github.com:your-username/web-app.git,github/web-app,active,public,yes,Main web application,infra;portfolio,2026-01-15T10:00:00Z,yes
+git@github.com:your-username/api-server.git,github/api-server,active,private,yes,REST API backend,infra;portfolio,2026-01-15T10:00:00Z,yes
+git@github.com:your-username/monitoring.git,github/monitoring,active,public,yes,Prometheus + Grafana monitoring stack,infra,2026-01-15T10:00:00Z,yes
+git@github.com:your-username/docs.git,github/docs,active,public,no,Project documentation,portfolio,2026-01-15T10:00:00Z,yes
+git@github.com:your-username/old-project.git,github/old-project,archived,private,no,An old project,,2026-01-15T10:00:00Z,no

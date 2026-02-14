@@ -1,0 +1,25 @@
+# Ecosystem Overview
+
+## Infrastructure
+
+Brief description of your infrastructure setup. What services do you run? Where are they deployed?
+
+## Deployment Flow
+
+How do new services get deployed? What's the workflow?
+
+1. Build the application in its own repo
+2. Add deployment manifests
+3. Deploy via your CI/CD or GitOps tool
+
+## Key Relationships
+
+- **web-app** — the main user-facing application
+- **api-server** — backend REST API, consumed by web-app
+- **monitoring** — observability stack, monitors all services
+- **docs** — project documentation
+
+## Conventions
+
+- Managed repos are actively maintained and synced via the registry
+- Tags use semicolons in the CSV (e.g. `infra;portfolio`)
