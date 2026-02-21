@@ -3,7 +3,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REGISTRY="$SCRIPT_DIR/registry.csv"
-GITHUB_USER="your-username"
+
+# Load config
+# shellcheck source=.env
+[[ -f "$SCRIPT_DIR/.env" ]] && source "$SCRIPT_DIR/.env"
+GITHUB_USER="${GITHUB_USER:-}"
+[[ -z "$GITHUB_USER" ]] && { echo "Error: GITHUB_USER not set. Copy .env.example to .env and fill it in."; exit 1; }
 UPDATE_EXISTING=0
 PUSH_DESCRIPTIONS=0
 
@@ -173,10 +178,14 @@ while IFS= read -r repo; do
             desc_field="\"$desc_field\""
         fi
 
-        echo "$ssh_url,github/$name,archived,$visibility,no,$desc_field,,,yes" >> "$REGISTRY"
+        # Mark as managed if the repo already exists locally
+        is_managed="no"
+        [[ -d "$HOME/github/$name" ]] && is_managed="yes"
+
+        echo "$ssh_url,github/$name,archived,$visibility,no,$desc_field,,,$is_managed" >> "$REGISTRY"
         local_visibility="public"
         [[ "$is_private" == "true" ]] && local_visibility="private"
-        echo "  NEW   $name ($local_visibility)"
+        echo "  NEW   $name ($local_visibility, managed=$is_managed)"
         count_new=$((count_new + 1))
     fi
 done < <(echo "$repos_json" | python3 -c "

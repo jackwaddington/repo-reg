@@ -18,11 +18,11 @@ brew install gh && gh auth login    # or: sudo apt install gh
 git clone git@github.com:your-username/repo-reg.git ~/github/repo-reg
 cd ~/github/repo-reg
 
-# Create your registry from the example
+# Create your registry and config from the examples
 cp registry.csv.example registry.csv
 cp ecosystem.md.example ecosystem.md
-
-# Edit repo-discover.sh and repo-map.sh: set GITHUB_USER="your-username"
+cp .env.example .env
+# Edit .env: set GITHUB_USER="your-username"
 
 # Discover all your repos from GitHub
 ./repo-discover.sh --update
@@ -96,10 +96,11 @@ Repos with no cross-references show up as orphans. Re-run `./repo-map.sh` anytim
 ## Scripts
 
 | Script | What it does |
-|--------|-------------|
+| ------ | ------------ |
 | `repo-query.sh` | Query and filter repos (by status, tag, visibility, managed) |
 | `repo-sync.sh` | Clone missing, pull existing, push unpushed (with `--push`) |
 | `repo-discover.sh` | Discover repos from GitHub API, sync descriptions (`--update`, `--push`) |
+| `repo-create.sh` | Create new GitHub repos for managed entries not yet on GitHub (`--confirm`) |
 | `repo-context.sh` | Generate `CONTEXT.md` — ecosystem context for AI agents |
 | `repo-map.sh` | Generate `MAP.md` — Mermaid diagram of repo connections |
 | `repo-cleanup.sh` | Find and safely remove untracked directories |
@@ -109,7 +110,7 @@ Repos with no cross-references show up as orphans. Re-run `./repo-map.sh` anytim
 `registry.csv` fields:
 
 | Field | Description |
-|-------|-------------|
+| ----- | ----------- |
 | repo_url | SSH clone URL |
 | local_path | Path relative to $HOME |
 | status | active / archived / experimental |
@@ -122,12 +123,15 @@ Repos with no cross-references show up as orphans. Re-run `./repo-map.sh` anytim
 
 ## Configuration
 
-Two files need your GitHub username:
+Copy `.env.example` to `.env` and set your GitHub username:
 
-- `repo-discover.sh` line 6: `GITHUB_USER="your-username"`
-- `repo-map.sh` line 9: `GITHUB_USER="your-username"`
+```bash
+cp .env.example .env
+# then edit .env:
+GITHUB_USER="your-username"
+```
 
-Data files (`registry.csv`, `ecosystem.md`, `CONTEXT.md`, `MAP.md`) are gitignored — they contain your personal repo data. Example files are provided to get started.
+`.env` is gitignored. Data files (`registry.csv`, `ecosystem.md`, `CONTEXT.md`, `MAP.md`) are also gitignored — they contain your personal repo data. Example files are provided to get started.
 
 ## Using from other repos/scripts
 

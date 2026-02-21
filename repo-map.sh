@@ -5,8 +5,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REGISTRY="$SCRIPT_DIR/registry.csv"
 OUTPUT="$SCRIPT_DIR/MAP.md"
 
-# Your GitHub username — used to find cross-references between repos
-GITHUB_USER="your-username"
+# Load config
+# shellcheck source=.env
+[[ -f "$SCRIPT_DIR/.env" ]] && source "$SCRIPT_DIR/.env"
+GITHUB_USER="${GITHUB_USER:-}"
+[[ -z "$GITHUB_USER" ]] && { echo "Error: GITHUB_USER not set. Copy .env.example to .env and fill it in."; exit 1; }
 
 # Parse a CSV line handling quoted fields
 parse_csv_line() {
