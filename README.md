@@ -73,25 +73,63 @@ git clone <this-repo> ~/github/repo-reg && cd ~/github/repo-reg
 
 ## The map
 
-`repo-map.sh` scans every managed repo (2 levels deep) for `your-username/repo-name` references and draws the connections it finds as a Mermaid diagram.
+Set `ROOT_REPO` in `.env` to your GitHub profile repo and `repo-map.sh` does a BFS outward from it — following links forward, suppressing return arrows. Tag repos to group them into subgraphs.
 
 ```mermaid
 graph LR
-    subgraph infra
-        web_app["web-app"]
-        api_server["api-server"]
-        monitoring
+    subgraph ai-agents
+        discord_philosopher
+        discord_intelligence
     end
-    subgraph portfolio
-        docs
+    subgraph data-analysis
+        online_private_bank_statement_analyser
+        joint_account_analyser["joint-account-analyser"]
+    end
+    subgraph devops
+        k3s
+        jWorld_observability["jWorld-observability"]
+        homelab_gitops["homelab-gitops"]
+    end
+    subgraph edge-net
+        edge_net["edge-net"]
+        edge_net_hub["edge-net-hub"]
+        edge_net_gfx["edge-net-gfx"]
+        edge_net_keybow["edge-net-keybow"]
+        edge_net_plasma["edge-net-plasma"]
+        edge_net_automation["edge-net-automation"]
+    end
+    subgraph untagged
+        moped
+        jackwaddington
+        smart_timelapse_pipeline["smart-timelapse-pipeline"]
+        repo_reg["repo-reg"]
+        Pi0Cam
+        jWorld
+        OpenBSD
     end
 
-    web_app --> api_server
-    monitoring --> web_app
-    monitoring --> api_server
+    jackwaddington --> discord_intelligence
+    jackwaddington --> discord_philosopher
+    jackwaddington --> edge_net
+    jackwaddington --> homelab_gitops
+    jackwaddington --> jWorld_observability
+    jackwaddington --> joint_account_analyser
+    jackwaddington --> k3s
+    jackwaddington --> moped
+    jackwaddington --> online_private_bank_statement_analyser
+    jackwaddington --> repo_reg
+    jackwaddington --> smart_timelapse_pipeline
+    edge_net --> edge_net_hub
+    edge_net --> edge_net_gfx
+    edge_net --> edge_net_keybow
+    edge_net --> edge_net_plasma
+    edge_net --> edge_net_automation
+    homelab_gitops --> jWorld_observability
+    homelab_gitops --> k3s
+    jWorld_observability --> k3s
 ```
 
-Repos with no cross-references show up as orphans. Re-run `./repo-map.sh` anytime to refresh.
+Re-run `./repo-map.sh` anytime to refresh.
 
 ## Scripts
 

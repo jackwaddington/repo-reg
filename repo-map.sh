@@ -10,6 +10,11 @@ OUTPUT="$SCRIPT_DIR/MAP.md"
 [[ -f "$SCRIPT_DIR/.env" ]] && source "$SCRIPT_DIR/.env"
 GITHUB_USER="${GITHUB_USER:-}"
 [[ -z "$GITHUB_USER" ]] && { echo "Error: GITHUB_USER not set. Copy .env.example to .env and fill it in."; exit 1; }
+# BFS mode: follow links outward from this repo, suppress reverse edges.
+# Set to your GitHub profile repo name (e.g. "jackwaddington"). Ignores MAP_TAGS when set.
+ROOT_REPO="${ROOT_REPO:-}"
+# Fallback tag filter when ROOT_REPO is not set (space-separated). Empty = all managed repos.
+MAP_TAGS="${MAP_TAGS:-}"
 
 # Parse a CSV line handling quoted fields
 parse_csv_line() {
@@ -46,18 +51,22 @@ sanitize_id() {
 
 # --- Configuration ---
 
-EXCLUDE_TAGS="personal dev"
+EXCLUDE_TAGS="personal dev portfolio"
 EXCLUDE_PATTERN=$(echo "$EXCLUDE_TAGS" | tr ' ' '|')
 
 # Repos that reference everything (index/meta repos) — skip as edge sources
-SKIP_SOURCES="repo-registry ${GITHUB_USER}"
+SKIP_SOURCES="repo-registry repo-reg ${GITHUB_USER}"
 
-# --- Phase 1: Gather nodes (managed repos) ---
+# --- Phase 1: Gather ALL managed repos ---
+# In BFS mode we need to know about every repo so we can follow links to any of them.
+# In MAP_TAGS mode we filter here to only the tagged subset.
 
-ALL_TAGS=""
+ALL_REPOS_PATHS=""   # name:path for every managed repo (used by BFS traversal)
+ALL_REPOS_NAMES=""   # every managed repo name (for link-target validation)
+
+REPO_PATHS=""  # filtered set for non-BFS mode
 REPO_NAMES=""
-REPO_PATHS=""  # lines of "name:local_path"
-REPO_TAGS=""   # lines of "name:tags"
+REPO_TAGS=""
 
 while IFS= read -r line; do
     [[ -z "$line" ]] && continue
@@ -69,68 +78,179 @@ while IFS= read -r line; do
     tags="${FIELDS[6]:-}"
     name=$(basename "$path")
 
-    REPO_NAMES+="$name"$'\n'
-    REPO_PATHS+="$name:$HOME/$path"$'\n'
-    REPO_TAGS+="$name:$tags"$'\n'
+    # Always add to the full set (needed for BFS link validation)
+    ALL_REPOS_PATHS+="$name:$HOME/$path"$'\n'
+    ALL_REPOS_NAMES+="$name"$'\n'
 
-    if [[ -n "$tags" ]]; then
-        IFS=';' read -ra tag_arr <<< "$tags"
-        for tag in "${tag_arr[@]}"; do
-            tag=$(echo "$tag" | xargs)
-            ALL_TAGS+="$tag"$'\n'
-        done
+    # For MAP_TAGS mode, also build the filtered set
+    if [[ -z "$ROOT_REPO" ]]; then
+        if [[ -n "$MAP_TAGS" ]]; then
+            matched=0
+            for mt in $MAP_TAGS; do
+                if [[ ";${tags};" == *";${mt};"* ]]; then
+                    matched=1
+                    break
+                fi
+            done
+            [[ "$matched" -eq 0 ]] && continue
+        fi
+        REPO_NAMES+="$name"$'\n'
+        REPO_PATHS+="$name:$HOME/$path"$'\n'
+        REPO_TAGS+="$name:$tags"$'\n'
     fi
 done < <(tail -n +2 "$REGISTRY")
 
-SORTED_TAGS=$(echo "$ALL_TAGS" | sort -u | grep -v '^$' | grep -Ev "^(${EXCLUDE_PATTERN})$" || true)
+ALL_UNIQUE_NAMES=$(echo "$ALL_REPOS_NAMES" | sort -u | grep -v '^$')
 
-# Build list of unique repo names for grepping
-UNIQUE_NAMES=$(echo "$REPO_NAMES" | sort -u | grep -v '^$')
-
-# --- Phase 2: Discover edges by scanning repos ---
+# --- Phase 2: Discover edges ---
 
 echo "Scanning repos for cross-references..."
-
 EDGES=""
 
-while IFS= read -r entry; do
-    [[ -z "$entry" ]] && continue
-    source_name=$(echo "$entry" | cut -d':' -f1)
-    source_path=$(echo "$entry" | cut -d':' -f2-)
-
-    [[ ! -d "$source_path" ]] && continue
-
-    # Skip index/meta repos that reference everything
-    if echo "$SKIP_SOURCES" | grep -qw "$source_name" 2>/dev/null; then
-        continue
-    fi
-
-    # Find all ${GITHUB_USER}/ references in files up to 2 levels deep
-    # Skip .git dirs and binary files
-    refs=$(find "$source_path" -maxdepth 2 -type f ! -path '*/.git/*' \
+# Scan a local repo directory for jackwaddington/repo-name references
+scan_refs() {
+    local source_path="$1"
+    [[ ! -d "$source_path" ]] && return
+    find "$source_path" -maxdepth 2 -type f ! -path '*/.git/*' \
         -exec grep -lI "${GITHUB_USER}/" {} + 2>/dev/null \
         | xargs grep -oh "${GITHUB_USER}/[A-Za-z0-9_.-]*" 2>/dev/null \
         | sed "s|${GITHUB_USER}/||" \
-        | sort -u || true)
+        | sort -u || true
+}
 
-    while IFS= read -r target_name; do
-        [[ -z "$target_name" ]] && continue
-        # Strip trailing .git if present
-        target_name="${target_name%.git}"
-        [[ "$target_name" == "$source_name" ]] && continue
+get_repo_path() {
+    echo "$ALL_REPOS_PATHS" | grep "^${1}:" | head -1 | cut -d':' -f2-
+}
 
-        # Only add edge if target is a known repo
-        if echo "$UNIQUE_NAMES" | grep -qx "$target_name" 2>/dev/null; then
-            edge_key="${source_name},${target_name}"
+if [[ -n "$ROOT_REPO" ]]; then
+    # --- BFS mode ---
+    # Process repos in breadth-first order from ROOT_REPO.
+    # Only add forward edges: if A→B is already recorded, suppress B→A.
+    BFS_QUEUE=("$ROOT_REPO")
+    BFS_VISITED=""
+    INCLUDED_NODES=""
+
+    bfs_idx=0
+    while [[ $bfs_idx -lt ${#BFS_QUEUE[@]} ]]; do
+        current="${BFS_QUEUE[$bfs_idx]}"
+        bfs_idx=$((bfs_idx + 1))
+
+        # Skip if already visited
+        echo "$BFS_VISITED" | grep -qx "$current" 2>/dev/null && continue
+        BFS_VISITED+="$current"$'\n'
+        INCLUDED_NODES+="$current"$'\n'
+
+        # Skip meta repos as edge sources (but never skip the root itself)
+        if [[ "$current" != "$ROOT_REPO" ]]; then
+            echo "$SKIP_SOURCES" | grep -qw "$current" 2>/dev/null && continue
+        fi
+
+        source_path=$(get_repo_path "$current")
+        [[ -z "$source_path" || ! -d "$source_path" ]] && continue
+
+        while IFS= read -r target_name; do
+            [[ -z "$target_name" ]] && continue
+            target_name="${target_name%.git}"
+            [[ "$target_name" == "$current" ]] && continue
+
+            # Only known repos
+            echo "$ALL_UNIQUE_NAMES" | grep -qx "$target_name" 2>/dev/null || continue
+
+            # Suppress reverse edges: skip if target→current already exists
+            if echo "$EDGES" | grep -q "^${target_name},${current}$" 2>/dev/null; then
+                continue
+            fi
+
+            edge_key="${current},${target_name}"
             if ! echo "$EDGES" | grep -q "^${edge_key}$" 2>/dev/null; then
                 EDGES+="${edge_key}"$'\n'
-                echo "  $source_name --> $target_name"
+                echo "  $current --> $target_name"
             fi
+
+            # Queue target if not yet visited
+            echo "$BFS_VISITED" | grep -qx "$target_name" 2>/dev/null || BFS_QUEUE+=("$target_name")
+
+        done < <(scan_refs "$source_path")
+    done
+
+    # Build REPO_TAGS and ALL_TAGS from only the visited nodes
+    ALL_TAGS=""
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        parse_csv_line "$line"
+        managed="${FIELDS[8]:-}"
+        [[ "$managed" != "yes" ]] && continue
+        path="${FIELDS[1]:-}"
+        tags="${FIELDS[6]:-}"
+        name=$(basename "$path")
+        echo "$INCLUDED_NODES" | grep -qx "$name" 2>/dev/null || continue
+        REPO_TAGS+="$name:$tags"$'\n'
+        REPO_NAMES+="$name"$'\n'
+        if [[ -n "$tags" ]]; then
+            IFS=';' read -ra tag_arr <<< "$tags"
+            for tag in "${tag_arr[@]}"; do
+                tag=$(echo "$tag" | xargs)
+                ALL_TAGS+="$tag"$'\n'
+            done
         fi
-    done <<< "$refs"
-done <<< "$REPO_PATHS"
+    done < <(tail -n +2 "$REGISTRY")
+
+else
+    # --- MAP_TAGS / scan-all mode ---
+    ALL_TAGS=""
+    while IFS= read -r entry; do
+        [[ -z "$entry" ]] && continue
+        name=$(echo "$entry" | cut -d':' -f1)
+        tags=$(echo "$REPO_TAGS" | grep "^${name}:" | cut -d':' -f2-)
+        if [[ -n "$tags" ]]; then
+            IFS=';' read -ra tag_arr <<< "$tags"
+            for tag in "${tag_arr[@]}"; do
+                tag=$(echo "$tag" | xargs)
+                ALL_TAGS+="$tag"$'\n'
+            done
+        fi
+    done <<< "$REPO_NAMES"
+
+    while IFS= read -r entry; do
+        [[ -z "$entry" ]] && continue
+        source_name=$(echo "$entry" | cut -d':' -f1)
+        source_path=$(echo "$entry" | cut -d':' -f2-)
+        [[ ! -d "$source_path" ]] && continue
+        echo "$SKIP_SOURCES" | grep -qw "$source_name" 2>/dev/null && continue
+
+        UNIQUE_NAMES=$(echo "$REPO_NAMES" | sort -u | grep -v '^$')
+        while IFS= read -r target_name; do
+            [[ -z "$target_name" ]] && continue
+            target_name="${target_name%.git}"
+            [[ "$target_name" == "$source_name" ]] && continue
+            if echo "$UNIQUE_NAMES" | grep -qx "$target_name" 2>/dev/null; then
+                edge_key="${source_name},${target_name}"
+                if ! echo "$EDGES" | grep -q "^${edge_key}$" 2>/dev/null; then
+                    EDGES+="${edge_key}"$'\n'
+                    echo "  $source_name --> $target_name"
+                fi
+            fi
+        done < <(scan_refs "$source_path")
+    done <<< "$REPO_PATHS"
+
+    # Rebuild ALL_TAGS from REPO_TAGS
+    ALL_TAGS=""
+    while IFS= read -r entry; do
+        [[ -z "$entry" ]] && continue
+        tags=$(echo "$entry" | cut -d':' -f2-)
+        if [[ -n "$tags" ]]; then
+            IFS=';' read -ra tag_arr <<< "$tags"
+            for tag in "${tag_arr[@]}"; do
+                tag=$(echo "$tag" | xargs)
+                ALL_TAGS+="$tag"$'\n'
+            done
+        fi
+    done <<< "$REPO_TAGS"
+fi
 
 echo ""
+
+SORTED_TAGS=$(echo "$ALL_TAGS" | sort -u | grep -v '^$' | grep -Ev "^(${EXCLUDE_PATTERN})$" || true)
 
 # --- Phase 3: Group repos by primary tag ---
 
@@ -149,8 +269,12 @@ mark_printed() {
 {
     echo "# Repository Map"
     echo ""
-    echo "*Auto-generated by repo-map.sh — regenerate with \`./repo-map.sh\`*"
-    echo "*Edges discovered by scanning repos for \`${GITHUB_USER}/repo-name\` references.*"
+    if [[ -n "$ROOT_REPO" ]]; then
+        echo "*Auto-generated by repo-map.sh — BFS from \`${ROOT_REPO}\`, forward edges only.*"
+    else
+        echo "*Auto-generated by repo-map.sh — regenerate with \`./repo-map.sh\`*"
+        echo "*Edges discovered by scanning repos for \`${GITHUB_USER}/repo-name\` references.*"
+    fi
     echo ""
     echo '```mermaid'
     echo "graph LR"
@@ -193,7 +317,7 @@ mark_printed() {
         fi
     done <<< "$SORTED_TAGS"
 
-    # Untagged repos
+    # Untagged / orphan repos
     orphan_nodes=""
     while IFS= read -r entry; do
         [[ -z "$entry" ]] && continue
@@ -221,10 +345,8 @@ mark_printed() {
         [[ -z "$edge" ]] && continue
         source=$(echo "$edge" | cut -d',' -f1)
         target=$(echo "$edge" | cut -d',' -f2)
-
         src_id=$(sanitize_id "$source")
         tgt_id=$(sanitize_id "$target")
-
         echo "    ${src_id} --> ${tgt_id}"
     done <<< "$EDGES"
 
