@@ -79,7 +79,7 @@ Set `ROOT_REPO` in `.env` to your GitHub profile repo and `repo-map.sh` does a B
 graph LR
     subgraph ai-agents
         discord_philosopher
-        discord_intelligence
+        discord_airflow
     end
     subgraph data-analysis
         online_private_bank_statement_analyser
@@ -108,7 +108,7 @@ graph LR
         OpenBSD
     end
 
-    jackwaddington --> discord_intelligence
+    jackwaddington --> discord_airflow
     jackwaddington --> discord_philosopher
     jackwaddington --> edge_net
     jackwaddington --> homelab_gitops
