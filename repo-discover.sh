@@ -11,17 +11,21 @@ GITHUB_USER="${GITHUB_USER:-}"
 [[ -z "$GITHUB_USER" ]] && { echo "Error: GITHUB_USER not set. Copy .env.example to .env and fill it in."; exit 1; }
 UPDATE_EXISTING=0
 PUSH_DESCRIPTIONS=0
+RECENT_ONLY=0
+DAYS_BACK=30
 
 usage() {
     cat <<'EOF'
-Usage: repo-discover.sh [--update] [--push]
+Usage: repo-discover.sh [--update] [--push] [--recent] [--recent-days <N>]
 
 Discovers all repos from GitHub API and adds missing ones to registry.csv.
 Requires: gh CLI (brew install gh / sudo apt install gh)
 
 Options:
-  --update    Also update description for existing entries from GitHub
-  --push      Push descriptions from CSV to GitHub (managed repos only)
+  --update        Also update description for existing entries from GitHub
+  --push          Push descriptions from CSV to GitHub (managed repos only)
+  --recent        Only discover repos pushed in past 30 days (marks as managed=yes)
+  --recent-days N Look back N days instead of 30 (requires --recent)
 EOF
     exit 1
 }
@@ -30,6 +34,8 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --update) UPDATE_EXISTING=1; shift ;;
         --push) PUSH_DESCRIPTIONS=1; shift ;;
+        --recent) RECENT_ONLY=1; shift ;;
+        --recent-days) DAYS_BACK="$2"; shift 2 ;;
         -h|--help) usage ;;
         *) echo "Unknown option: $1" >&2; usage ;;
     esac
@@ -95,8 +101,24 @@ fi
 
 echo "repo-discover: fetching repos for $GITHUB_USER from GitHub..."
 
-# Fetch all repos via gh CLI
-repos_json=$(gh repo list "$GITHUB_USER" --limit 1000 --json name,sshUrl,isPrivate,description)
+# Fetch repos via gh CLI
+if [[ "$RECENT_ONLY" -eq 1 ]]; then
+    # Calculate the cutoff date (N days back)
+    cutoff_date=$(date -u -v-${DAYS_BACK}d +"%Y-%m-%d" 2>/dev/null || date -u -d "$DAYS_BACK days ago" +"%Y-%m-%d")
+    echo "  (recent mode: repos pushed since $cutoff_date)"
+
+    # Fetch all repos and filter by pushed date client-side
+    all_repos=$(gh repo list "$GITHUB_USER" --limit 1000 --json name,sshUrl,isPrivate,description,pushedAt)
+    repos_json=$(echo "$all_repos" | python3 -c "
+import json, sys, datetime
+repos = json.load(sys.stdin)
+cutoff = datetime.datetime.fromisoformat('$cutoff_date')
+recent = [r for r in repos if r.get('pushedAt') and datetime.datetime.fromisoformat(r['pushedAt'][:10]) >= cutoff]
+print(json.dumps(recent))")
+else
+    # Fetch all repos via gh CLI
+    repos_json=$(gh repo list "$GITHUB_USER" --limit 1000 --json name,sshUrl,isPrivate,description)
+fi
 
 count_new=0
 count_existing=0
@@ -178,9 +200,13 @@ while IFS= read -r repo; do
             desc_field="\"$desc_field\""
         fi
 
-        # Mark as managed if the repo already exists locally
+        # In recent mode, auto-mark as managed; otherwise check if exists locally
         is_managed="no"
-        [[ -d "$HOME/github/$name" ]] && is_managed="yes"
+        if [[ "$RECENT_ONLY" -eq 1 ]]; then
+            is_managed="yes"
+        else
+            [[ -d "$HOME/github/$name" ]] && is_managed="yes"
+        fi
 
         echo "$ssh_url,github/$name,archived,$visibility,no,$desc_field,,,$is_managed" >> "$REGISTRY"
         local_visibility="public"
