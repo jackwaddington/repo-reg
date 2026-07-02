@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REGISTRY="$SCRIPT_DIR/registry.csv"
+REGISTRY="${REGISTRY:-$HOME/github/high-level/registry.csv}"
 GITHUB_DIR="$HOME/github"
 CONFIRM=0
 

@@ -2,8 +2,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REGISTRY="$SCRIPT_DIR/registry.csv"
-OUTPUT="$SCRIPT_DIR/MAP.md"
+REGISTRY="${REGISTRY:-$HOME/github/high-level/registry.csv}"
+OUTPUT="${OUTPUT:-$HOME/github/high-level/MAP.md}"
 
 # Load config
 # shellcheck source=.env

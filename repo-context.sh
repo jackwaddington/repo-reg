@@ -2,9 +2,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REGISTRY="$SCRIPT_DIR/registry.csv"
-ECOSYSTEM="$SCRIPT_DIR/ecosystem.md"
-OUTPUT="$SCRIPT_DIR/CONTEXT.md"
+REGISTRY="${REGISTRY:-$HOME/github/high-level/registry.csv}"
+ECOSYSTEM="${ECOSYSTEM:-$HOME/github/high-level/ecosystem.md}"
+OUTPUT="${OUTPUT:-$HOME/github/high-level/CONTEXT.md}"
 
 # Parse a CSV line handling quoted fields (for descriptions with commas)
 parse_csv_line() {
@@ -186,11 +186,12 @@ mark_printed() {
     done < <(tail -n +2 "$REGISTRY")
 
     # Include the repository map if it exists
-    if [[ -f "$SCRIPT_DIR/MAP.md" ]]; then
+    MAP="${MAP:-$HOME/github/high-level/MAP.md}"
+    if [[ -f "$MAP" ]]; then
         echo ""
         echo "---"
         echo ""
-        cat "$SCRIPT_DIR/MAP.md"
+        cat "$MAP"
     fi
 
 } > "$OUTPUT"
